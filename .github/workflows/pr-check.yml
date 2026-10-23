@@ -1,0 +1,62 @@
+name: expenses-checks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  check-expenses:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Exercise the sample expense module
+        run: |
+          python - <<'PY'
+          import sys
+
+          sys.path.insert(0, "src")
+
+          from expenses import RATES, convert_to_usd, total_in_usd
+
+          failures = []
+
+          # A ledger that mixes currencies must be totalled in USD.
+          ledger = [
+              {"amount": 10, "currency": "USD"},
+              {"amount": 10, "currency": "EUR"},
+              {"amount": 1000, "currency": "JPY"},
+          ]
+          expected = round(sum(e["amount"] * RATES[e["currency"]] for e in ledger), 2)
+          got = total_in_usd(ledger)
+          if got != expected:
+              failures.append(
+                  f"total_in_usd() returned {got!r} for a mixed-currency ledger, "
+                  f"expected {expected!r} (amounts must be converted to USD before summing)"
+              )
+
+          # An unknown currency must not be silently swallowed.
+          try:
+              convert_to_usd(10, "GBP")
+          except Exception:
+              pass
+          else:
+              failures.append(
+                  "convert_to_usd() silently ignored an unknown currency ('GBP') "
+                  "instead of raising"
+              )
+
+          if failures:
+              print("Expense module checks FAILED:")
+              for failure in failures:
+                  print(f"  - {failure}")
+              sys.exit(1)
+
+          print("Expense module checks passed.")
+          PY
